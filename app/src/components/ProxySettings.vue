@@ -7,9 +7,8 @@
  * the top of the 同步 (Sync) category so users hitting "Operation
  * timed out" find it before they think to dig into a sub-panel.
  *
- * Today this only affects libgit2 push/pull. If we ever route AI /
- * RAG / GitHub REST through reqwest with a proxy too, the same field
- * will drive that — store stays the same.
+ * Applies to libgit2 transfers and GitHub REST requests, including
+ * token verification and repository listing. AI / RAG are separate.
  */
 import { onMounted, ref } from 'vue';
 import { useGithubSyncStore } from '../stores/githubSync';
