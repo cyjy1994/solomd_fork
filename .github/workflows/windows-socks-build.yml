@@ -39,6 +39,9 @@ jobs:
       - name: Build Windows MSI
         working-directory: app
         run: pnpm tauri build --bundles msi
+      - name: Test SOCKS Git transport
+        working-directory: app/src-tauri
+        run: cargo test --release --lib socks_git::tests
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
