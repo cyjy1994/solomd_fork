@@ -47,6 +47,9 @@ use git2::{AutotagOption, FetchOptions, PushOptions, Repository, Signature};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
+#[path = "socks_git.rs"]
+mod socks_git;
+
 const KEYRING_SERVICE: &str = "solomd-github";
 const KEYRING_USER: &str = "personal-access-token";
 const SYNC_CONFIG_FILE: &str = ".solomd/sync.json";
@@ -649,11 +652,7 @@ pub async fn github_enable_encryption(
             .shorthand()
             .ok_or_else(|| "shadow HEAD detached after init".to_string())?;
         let refspec = format!("+refs/heads/{0}:refs/heads/{0}", branch_name);
-        let mut opts = PushOptions::new();
-        opts.remote_callbacks(make_callbacks(token));
-        opts.proxy_options(make_proxy_options());
-        origin
-            .push(&[refspec.as_str()], Some(&mut opts))
+        push_remote(&repo, &mut origin, &token, &refspec)
             .map_err(|e| format!("force push failed: {}", e))?;
 
         if let Ok(Some(mut cfg2)) = load_config(&path) {
@@ -790,6 +789,30 @@ fn owner_from_url(url: &str) -> Option<String> {
     let _host = segs.next()?;
     let owner = segs.next()?;
     if owner.is_empty() { None } else { Some(owner.to_string()) }
+}
+
+fn push_remote(repo: &Repository, remote: &mut git2::Remote<'_>, token: &str, refspec: &str) -> Result<(), String> {
+    let url = remote.pushurl().or_else(|| remote.url()).unwrap_or("");
+    if let Some(proxy) = socks_git::selected_proxy(url, read_proxy_url().as_deref()) {
+        return socks_git::transfer(repo.path(), url, token, &proxy, "push", refspec);
+    }
+    let mut opts = PushOptions::new();
+    opts.remote_callbacks(make_callbacks(token.to_string()));
+    opts.proxy_options(make_proxy_options());
+    remote.push(&[refspec], Some(&mut opts)).map_err(|e| e.to_string())
+}
+
+fn fetch_remote(repo: &Repository, remote: &mut git2::Remote<'_>, token: &str, branch: &str) -> Result<(), String> {
+    let url = remote.url().unwrap_or("");
+    if let Some(proxy) = socks_git::selected_proxy(url, read_proxy_url().as_deref()) {
+        let refspec = format!("+refs/heads/{branch}:refs/remotes/origin/{branch}");
+        return socks_git::transfer(repo.path(), url, token, &proxy, "fetch", &refspec);
+    }
+    let mut opts = FetchOptions::new();
+    opts.remote_callbacks(make_callbacks(token.to_string()));
+    opts.proxy_options(make_proxy_options());
+    opts.download_tags(AutotagOption::All);
+    remote.fetch(&[branch], Some(&mut opts), None).map_err(|e| e.to_string())
 }
 
 fn make_callbacks(token: String) -> git2::RemoteCallbacks<'static> {
@@ -1112,11 +1135,8 @@ pub fn github_push_inner(
         .ok_or_else(|| "HEAD is detached; cannot push".to_string())?;
     let refspec = format!("refs/heads/{0}:refs/heads/{0}", branch_name);
 
-    let mut opts = PushOptions::new();
-    opts.remote_callbacks(make_callbacks(token));
-    opts.proxy_options(make_proxy_options());
-    origin.push(&[refspec.as_str()], Some(&mut opts)).map_err(|e| {
-        let msg = e.message();
+    push_remote(&repo, &mut origin, &token, &refspec).map_err(|e| {
+        let msg = e.as_str();
         if msg.contains("protected branch")
             || msg.contains("refusing to allow")
             || msg.contains("pre-receive hook")
@@ -1239,25 +1259,17 @@ pub fn github_pull_inner(folder: String, token: String) -> Result<PullResult, St
         let mut origin = repo.find_remote("origin").map_err(|e| e.to_string())?;
         let mut upstream_branch = branch_name.clone();
         let mut fetch_err: Option<String> = None;
-        {
-            let mut fetch_opts = FetchOptions::new();
-            fetch_opts.remote_callbacks(make_callbacks(token.clone()));
-            fetch_opts.proxy_options(make_proxy_options());
-            fetch_opts.download_tags(AutotagOption::All);
-            if let Err(e) = origin.fetch(&[&branch_name], Some(&mut fetch_opts), None) {
-                fetch_err = Some(e.to_string());
-            }
+        if let Err(e) = fetch_remote(&repo, &mut origin, &token, &branch_name) {
+            fetch_err = Some(e);
         }
         let ref_exists = |name: &str| {
             repo.find_reference(&format!("refs/remotes/origin/{name}"))
                 .is_ok()
         };
         if !ref_exists(&upstream_branch) && branch_name == "main" {
-            let mut retry_opts = FetchOptions::new();
-            retry_opts.remote_callbacks(make_callbacks(token.clone()));
-            retry_opts.proxy_options(make_proxy_options());
-            retry_opts.download_tags(AutotagOption::All);
-            let _ = origin.fetch(&["master"], Some(&mut retry_opts), None);
+            if let Err(e) = fetch_remote(&repo, &mut origin, &token, "master") {
+                return Err(format!("fetch failed: {}", fetch_err.unwrap_or(e)));
+            }
             if ref_exists("master") {
                 upstream_branch = "master".to_string();
             }
@@ -1270,6 +1282,12 @@ pub fn github_pull_inner(folder: String, token: String) -> Result<PullResult, St
                     branch_name
                 ),
             });
+        }
+
+        if let Some(e) = fetch_err {
+            if upstream_branch == branch_name {
+                return Err(format!("fetch failed: {}", e));
+            }
         }
 
         // 2) Look up the upstream ref we just fetched.
