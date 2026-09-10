@@ -1333,11 +1333,11 @@ export const zh: I18n = {
     proxyTitle: 'HTTPS 代理（防火墙 / 公司网络穿透）',
     proxyPlaceholder: 'http://127.0.0.1:7897 或 socks5://127.0.0.1:1080',
     proxyHint:
-      '把 git 推/拉走这个代理。留空就直连。macOS 应用从 Finder 启动时不继承 shell 里的 HTTPS_PROXY 变量，所以专门在这里给 SoloMD 设。github.com 直连超时时填这个就好。',
+      'GitHub 验证、仓库列表、创建仓库及 Git 推送/拉取使用此代理。支持 HTTP 和 SOCKS5；socks5h:// 由代理解析域名。留空恢复默认代理行为（可能使用环境变量）。',
     proxySaveBtn: '保存代理',
     proxySaving: '保存中…',
     proxySavedToast: '代理已保存。',
-    proxyClearedToast: '已清除代理 — 将直连。',
+    proxyClearedToast: '已清除代理 — 恢复默认代理行为。',
 
     pillBusy: '同步中…',
     pillBehind: '有 {n} 个待拉取，点击立即拉取',

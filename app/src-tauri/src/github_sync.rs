@@ -271,9 +271,24 @@ pub struct GitHubRepo {
     pub updated_at: String,
 }
 
+/// Use the saved sync proxy for REST requests as well as Git transfers.
+/// Without an explicit setting, reqwest retains its environment proxy fallback.
+fn sync_http_client() -> Result<reqwest::Client, String> {
+    let mut builder = reqwest::Client::builder();
+    if let Some(url) = read_proxy_url() {
+        // Do not include the URL in errors: it may contain proxy credentials.
+        let proxy = reqwest::Proxy::all(&url)
+            .map_err(|_| "Invalid sync proxy URL".to_string())?;
+        builder = builder.proxy(proxy);
+    }
+    builder
+        .build()
+        .map_err(|_| "Failed to build sync HTTP client".to_string())
+}
+
 async fn api_get<T: for<'de> Deserialize<'de>>(path: &str, token: &str) -> Result<T, String> {
     let url = format!("{}{}", GITHUB_API, path);
-    let res = reqwest::Client::new()
+    let res = sync_http_client()?
         .get(&url)
         .header("Authorization", format!("Bearer {}", token))
         .header("Accept", "application/vnd.github+json")
@@ -296,7 +311,7 @@ async fn api_post<B: Serialize, T: for<'de> Deserialize<'de>>(
     body: &B,
 ) -> Result<T, String> {
     let url = format!("{}{}", GITHUB_API, path);
-    let res = reqwest::Client::new()
+    let res = sync_http_client()?
         .post(&url)
         .header("Authorization", format!("Bearer {}", token))
         .header("Accept", "application/vnd.github+json")
@@ -824,7 +839,7 @@ fn now_secs() -> i64 {
 // apps started from Finder/Dock don't inherit the user's shell env.
 // Storage: ~/.solomd/proxy (single-line URL like
 // `http://127.0.0.1:7897` or `socks5://127.0.0.1:1080`). Empty file = no
-// proxy = direct connect. Read on every push/pull (dirt-cheap).
+// proxy = default proxy behavior. Read on each GitHub REST request and transfer.
 // ---------------------------------------------------------------------------
 
 fn proxy_path() -> Option<PathBuf> {
@@ -858,7 +873,7 @@ pub fn proxy_set(url: String) -> Result<(), String> {
     }
     let trimmed = url.trim();
     if trimmed.is_empty() {
-        // Empty input = remove the file = direct connect.
+        // Empty input restores the default proxy behavior.
         let _ = fs::remove_file(&p);
         return Ok(());
     }

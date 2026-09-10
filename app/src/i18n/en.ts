@@ -1347,11 +1347,11 @@ export const en = {
     proxyTitle: 'HTTPS proxy (for GFW / corporate networks)',
     proxyPlaceholder: 'http://127.0.0.1:7897 or socks5://127.0.0.1:1080',
     proxyHint:
-      'Routes git push / pull through this proxy. Leave empty for direct connect. macOS GUI apps don\'t inherit shell HTTPS_PROXY env, so set it here for SoloMD specifically. Also fixes "Operation timed out" when github.com is unreachable directly.',
+      'Routes GitHub verification, repository listing, repository creation and Git transfers through this proxy. Supports HTTP and SOCKS5; socks5h:// resolves names through the proxy. Leave empty to restore default proxy behavior, including environment settings.',
     proxySaveBtn: 'Save proxy',
     proxySaving: 'Saving…',
     proxySavedToast: 'Proxy saved.',
-    proxyClearedToast: 'Proxy cleared — will direct-connect.',
+    proxyClearedToast: 'Proxy cleared — default proxy behavior restored.',
 
     pillBusy: 'Syncing…',
     pillBehind: '{n} to pull — click to pull now',

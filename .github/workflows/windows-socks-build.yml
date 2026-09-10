@@ -1,0 +1,48 @@
+name: Build Windows SOCKS5
+
+on:
+  push:
+    branches: [fix/socks5-windows-build]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-socks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            app/src-tauri -> target
+            mcp-server -> target
+      - name: Install frontend dependencies
+        working-directory: app
+        run: pnpm install --frozen-lockfile
+      - name: Build MCP sidecar
+        shell: bash
+        run: bash scripts/build-mcp-sidecar.sh
+      - name: Build Windows MSI
+        working-directory: app
+        run: pnpm tauri build --bundles msi
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: SoloMD-Windows-x64-SOCKS5-${{ github.sha }}
+          path: app/src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: error
+          retention-days: 14
